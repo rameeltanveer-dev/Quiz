@@ -72,21 +72,14 @@ const nextBtn = document.getElementById('nextBtn');
 const prevBtn = document.getElementById('prevBtn');
 const globalTimerEl = document.getElementById('globalTimer');
 const qTimerEl = document.getElementById('qTimer');
-
-/* ---------- 🔥 NEW FIREWORKS AUDIO ---------- */
-const fireworksAudio = new Audio("https://cdn.pixabay.com/download/audio/2022/03/10/audio_197b88c681.mp3?filename=fireworks-10-419029.mp3");
-
-document.body.addEventListener("click", () => {
-  fireworksAudio.play().then(() => {
-    fireworksAudio.pause();
-    fireworksAudio.currentTime = 0;
-  }).catch(() => {});
-}, { once: true });
-
-function playFireworks() {
-  fireworksAudio.currentTime = 0;
-  fireworksAudio.play();
-}
+const fireworksAudio = document.getElementById('fireworksAudio');
+const fireworksContainer = document.getElementById('fireworksContainer');
+const resultModal = document.getElementById('resultModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalMessage = document.getElementById('modalMessage');
+const modalEmoji = document.getElementById('modalEmoji');
+const modalClose = document.getElementById('modalClose');
+const modalDetails = document.getElementById('modalDetails');
 
 /* ---------- HELPERS ---------- */
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
@@ -213,20 +206,189 @@ function goNextAfterAuto(){
   } else finishQuiz();
 }
 
-/* ---------- FINISH QUIZ (updated celebration) ---------- */
+/* ---------- FINISH QUIZ ---------- */
 function finishQuiz(){
   stopGlobalTimer(); stopQuestionTimer();
   const total = questions.length;
   const percent = Math.round((correct/total)*100);
 
-  if (percent >= 70) {
-    playFireworks(); // 🔥 Safe autoplay
-    alert("🎉 Congratulations! You scored " + percent + "%");
+  // Decide celebration level
+  if(percent >= 90){
+    // VIP
+    showResultModal({
+      title: "👑 VIP فتح!",
+      message: `زبردست! آپ نے ${percent}% حاصل کیے — VIP Celebration!`,
+      emoji: "👑",
+      type: "vip"
+    });
+    // VIP sound using WebAudio
+    try { playVIPMelody(); } catch(e){ console.warn(e); }
+    playVIPConfetti();
+  } else if(percent >= 70){
+    // Normal celebration
+    showResultModal({
+      title: "🎉 مبارک ہو!",
+      message: `آپ نے ${percent}% حاصل کیے — شاندار کارکردگی!`,
+      emoji: "🎊",
+      type: "success"
+    });
+    try { fireworksAudio.currentTime = 0; fireworksAudio.play(); } catch(e){}
+    playFireworks();
   } else {
-    alert("😌 کوشش جاری رکھیں — آپ نے " + percent + "% حاصل کیے۔ کوشش کریں، آپ بہتر کریں گے!");
+    // Better luck
+    showResultModal({
+      title: "😌 کوشش جاری رکھیں",
+      message: `Better luck next time — آپ نے ${percent}% حاصل کیے۔ کوشش کریں، آپ بہتر کریں گے!`,
+      emoji: "✨",
+      type: "soft"
+    });
+    playSoftConfetti();
   }
+
+  // Open result in new tab (detailed)
+  const resultWindow = window.open('','_blank');
+  const resultHtml = `
+    <html lang="ur" dir="rtl">
+    <head><meta charset="utf-8"><title>Quiz Result — ${escapeHtml(userName)}</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif; padding:28px; background:#0f172a; color:#fff}
+      .box{background:#071028;padding:18px;border-radius:10px; max-width:720px;margin:30px auto}
+      h1{color:#7dd3fc} p{font-size:1.05rem}
+      table{width:100%; border-collapse:collapse; margin-top:12px}
+      td,th{padding:10px; text-align:right; border-bottom:1px solid rgba(255,255,255,0.06)}
+      .percent{font-size:1.5rem; font-weight:700; color:${percent>=70? '#a7f3d0':'#fecaca'}}
+    </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>نتیجہ — ${escapeHtml(userName)}</h1>
+        <p>کل سوالات: ${total}</p>
+        <p>صحیح: ${correct} &nbsp; | &nbsp; غلط: ${wrong}</p>
+        <p class="percent">٪ ${percent}</p>
+      </div>
+    </body>
+    </html>`;
+  resultWindow.document.write(resultHtml);
+  resultWindow.document.close();
+
+  // Send results via WhatsApp and Gmail
+  const waMsg = encodeURIComponent(`Quiz Result for ${userName}: ${percent}% — Correct:${correct}, Wrong:${wrong}`);
+  window.open(`https://wa.me/${FIXED_WHATSAPP}?text=${waMsg}`, '_blank');
+  const mailMsg = encodeURIComponent(`Quiz Result for ${userName}: ${percent}% — Correct:${correct}, Wrong:${wrong}`);
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${FIXED_EMAIL}&su=CSS Quiz Result&body=${mailMsg}`, '_blank');
 }
 
-/* ---------- UTILITIES ---------- */
-function escapeHtml(str){ return String(str).replace(/[&<>"'`=\/]/g, function(s){ return ({ '&':"&amp;", '<':"&lt;", '>':"&gt;", '"':"&quot;", "'":"&#39;", '/':"&#x2F;", '`':"&#x60;", '=':"&#x3D;"}[s]); }); }
-function unescapeHtml(s){ return String(s).replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&#x2F;|&#x60;|&#x3D;/g, function(m){ return ({ "&amp;":"&", "&lt;":"<", "&gt;":">", "&quot;":'"', "&#39;":"'", "&#x2F;":"/", "&#x60;":"`", "&#x3D;":"=" }[m]); }); }
+/* ---------- MODAL (animated result) ---------- */
+function showResultModal({title, message, emoji, type}){
+  modalTitle.textContent = title || "نتیجہ";
+  modalMessage.textContent = message || "";
+  modalEmoji.textContent = emoji || "🎉";
+  modalMessage.classList.remove('good','bad');
+  // style
+  if(type === 'vip') {
+    modalMessage.classList.add('good');
+    resultModal.querySelector('.modal-card').classList.add('vip-glow');
+  } else {
+    resultModal.querySelector('.modal-card').classList.remove('vip-glow');
+    if(type === 'success') modalMessage.classList.add('good');
+    else if(type === 'soft') modalMessage.classList.add('bad');
+  }
+  resultModal.classList.remove('hidden');
+
+  modalClose.onclick = ()=> { resultModal.classList.add('hidden'); };
+  modalDetails.onclick = ()=> { resultModal.classList.add('hidden'); }; // detailed tab already opened
+}
+
+/* ---------- FIREWORKS / CONFETTI ---------- */
+function playFireworks(){
+  fireworksContainer.classList.remove('hidden');
+  const colors = ['#ff6b6b','#ffd166','#06d6a0','#4ecdc4','#9b5de5','#f15bb5'];
+  const count = 80;
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.background = colors[i % colors.length];
+    el.style.left = (Math.random()*100) + '%';
+    el.style.top = (-Math.random()*10) + 'vh';
+    el.style.width = (6 + Math.random()*10) + 'px';
+    el.style.height = (10 + Math.random()*18) + 'px';
+    el.style.opacity = (0.8 + Math.random()*0.2);
+    el.style.transform = `rotate(${Math.random()*360}deg)`;
+    el.style.animationDuration = (2 + Math.random()*3) + 's';
+    fireworksContainer.appendChild(el);
+    setTimeout(()=> el.remove(), 6500);
+  }
+  setTimeout(()=> fireworksContainer.classList.add('hidden'), 6000);
+}
+
+function playSoftConfetti(){
+  fireworksContainer.classList.remove('hidden');
+  const colors = ['#ffd166','#ffb4a2','#fff1c6','#ffd6a5'];
+  const count = 30;
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.background = colors[i % colors.length];
+    el.style.left = (Math.random()*100) + '%';
+    el.style.top = (-Math.random()*10) + 'vh';
+    el.style.width = (6 + Math.random()*8) + 'px';
+    el.style.height = (10 + Math.random()*14) + 'px';
+    el.style.opacity = (0.7 + Math.random()*0.3);
+    el.style.transform = `rotate(${Math.random()*360}deg)`;
+    el.style.animationDuration = (2 + Math.random()*3) + 's';
+    fireworksContainer.appendChild(el);
+    setTimeout(()=> el.remove(), 5200);
+  }
+  setTimeout(()=> fireworksContainer.classList.add('hidden'), 4800);
+}
+
+function playVIPConfetti(){
+  fireworksContainer.classList.remove('hidden');
+  const colors = ['#ffd700','#ffdf7e','#fff7cc','#ffd166','#ffe69a'];
+  const count = 140;
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.background = colors[i % colors.length];
+    el.style.left = (Math.random()*100) + '%';
+    el.style.top = (-Math.random()*15) + 'vh';
+    el.style.width = (6 + Math.random()*12) + 'px';
+    el.style.height = (10 + Math.random()*22) + 'px';
+    el.style.opacity = (0.85 + Math.random()*0.15);
+    el.style.transform = `rotate(${Math.random()*360}deg)`;
+    el.style.animationDuration = (2 + Math.random()*3) + 's';
+    fireworksContainer.appendChild(el);
+    setTimeout(()=> el.remove(), 8000);
+  }
+  setTimeout(()=> fireworksContainer.classList.add('hidden'), 7800);
+}
+
+/* ---------- VIP Melodic Flourish (WebAudio) ---------- */
+function playVIPMelody(){
+  if(!window.AudioContext && !window.webkitAudioContext) return;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AudioCtx();
+  const now = ctx.currentTime;
+
+  // create a bright harmonic motif
+  const freqs = [880, 1100, 1320, 1760]; // A5, C#6, E6, A6-ish
+  freqs.forEach((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = (i % 2 === 0) ? 'sawtooth' : 'triangle';
+    osc.frequency.value = f;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now + i*0.08);
+    gain.gain.setValueAtTime(0, now + i*0.08);
+    gain.gain.linearRampToValueAtTime(0.12, now + i*0.08 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + i*0.08 + 1.05);
+    osc.stop(now + i*0.08 + 1.1);
+  });
+
+  // small bell overlay
+  const bell = ctx.createOscillator();
+  const bellGain = ctx.createGain();
+  bell.type = 'sine';
+  bell.frequency.value = 1320
